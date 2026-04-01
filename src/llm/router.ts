@@ -15,6 +15,7 @@ export function getProvider(name: string): LLMAdapter {
         case 'openrouter': return new OpenAICompatAdapter(p.openrouter);
         case 'deepseek':   return new OpenAICompatAdapter(p.deepseek);
         case 'openai':     return new OpenAICompatAdapter(p.openai);
+        case 'gemini':     return new OpenAICompatAdapter(p.gemini);
         case 'ollama':     return new OllamaAdapter(config.ollama.fallback);
         default:
             logger.warn(`Proveedor '${name}' desconocido. Usando cascada.`);

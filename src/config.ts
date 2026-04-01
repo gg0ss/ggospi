@@ -54,6 +54,13 @@ export const config = {
             baseUrl: env('OPENAI_URL', 'https://api.openai.com/v1'),
             model: env('OPENAI_MODEL', 'gpt-4o-mini'),
             timeout: 20000
+        },
+        gemini: {
+            name: 'gemini',
+            apiKey: env('GEMINI_API_KEY'),
+            baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+            model: env('GEMINI_MODEL', 'gemini-2.0-flash'),
+            timeout: 20000
         }
     },
 

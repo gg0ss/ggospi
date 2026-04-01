@@ -1,54 +1,98 @@
-import { getDb } from './db.js';
-import { LLMMessage } from '../types/index.js';
+import Database from 'better-sqlite3';
+import { config } from '../config.js';
+import { LLMMessage } from '../llm/interface.js';
+import path from 'path';
+import fs from 'fs';
 
-export function saveMessage(userId: number, agentName: string, role: string, content: string): void {
-    const db = getDb();
-    db.prepare('INSERT INTO messages (user_id, agent_name, role, content) VALUES (?, ?, ?, ?)')
-      .run(userId, agentName, role, content);
+let db: ReturnType<typeof Database>;
+
+export function initDatabase() {
+    const dir = path.dirname(config.db.path);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+    db = new Database(config.db.path);
+    db.pragma('journal_mode = WAL');
+
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            agent_name TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        CREATE TABLE IF NOT EXISTS agents (
+            name TEXT PRIMARY KEY,
+            description TEXT NOT NULL,
+            system_prompt TEXT NOT NULL,
+            model_provider TEXT NOT NULL,
+            created_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        CREATE TABLE IF NOT EXISTS action_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            agent_name TEXT NOT NULL,
+            action_type TEXT NOT NULL,
+            description TEXT NOT NULL,
+            result TEXT,
+            confirmed INTEGER NOT NULL DEFAULT 0,
+            executed_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        CREATE TABLE IF NOT EXISTS pending (
+            user_id INTEGER PRIMARY KEY,
+            data TEXT NOT NULL,
+            expires_at INTEGER NOT NULL
+        );
+    `);
 }
 
-export function getHistory(userId: number, agentName: string, limit: number = 20): LLMMessage[] {
-    const db = getDb();
-    const rows = db.prepare(`
-        SELECT role, content FROM messages 
+export function getDb() {
+    if (!db) initDatabase();
+    return db;
+}
+
+// ─── Mensajes / Historial ────────────────────────────────────────────────────
+
+export function saveMessage(userId: number, agentName: string, role: string, content: string) {
+    getDb().prepare(
+        'INSERT INTO messages (user_id, agent_name, role, content) VALUES (?, ?, ?, ?)'
+    ).run(userId, agentName, role, content);
+}
+
+export function getHistory(userId: number, agentName: string, limit = 10): LLMMessage[] {
+    const rows = getDb().prepare(`
+        SELECT role, content FROM messages
         WHERE user_id = ? AND agent_name = ?
         ORDER BY id DESC LIMIT ?
-    `).all(userId, agentName, limit) as {role: 'user'|'assistant'|'system', content: string}[];
-    
+    `).all(userId, agentName, limit) as { role: any; content: string }[];
     return rows.reverse().map(r => ({ role: r.role, content: r.content }));
 }
 
-export function logAction(userId: number, agentName: string, type: string, description: string, result: string | null, confirmed: boolean): void {
-    const db = getDb();
-    db.prepare(`
-        INSERT INTO action_log (user_id, agent_name, action_type, description, result, confirmed) 
+// ─── Agentes dinámicos ────────────────────────────────────────────────────────
+
+export function saveAgent(name: string, description: string, systemPrompt: string, modelProvider: string) {
+    getDb().prepare(`
+        INSERT OR REPLACE INTO agents (name, description, system_prompt, model_provider)
+        VALUES (?, ?, ?, ?)
+    `).run(name, description, systemPrompt, modelProvider);
+}
+
+export function getStoredAgents(): any[] {
+    return getDb().prepare('SELECT * FROM agents').all();
+}
+
+// ─── Action log ────────────────────────────────────────────────────────────────
+
+export function logAction(
+    userId: number, agentName: string, type: string,
+    description: string, result: string | null, confirmed: boolean
+) {
+    getDb().prepare(`
+        INSERT INTO action_log (user_id, agent_name, action_type, description, result, confirmed)
         VALUES (?, ?, ?, ?, ?, ?)
     `).run(userId, agentName, type, description, result, confirmed ? 1 : 0);
-}
-
-export function isCapabilityInstalled(name: string): boolean {
-    const db = getDb();
-    const row = db.prepare('SELECT 1 FROM capabilities WHERE name = ? AND status = "installed"').get(name);
-    return !!row;
-}
-
-export function saveCapability(name: string, packages: string, status: string): void {
-    const db = getDb();
-    db.prepare('INSERT OR REPLACE INTO capabilities (name, packages, status) VALUES (?, ?, ?)')
-      .run(name, packages, status);
-}
-
-export function setActiveAgent(userId: number, agentName: string): void {
-    const db = getDb();
-    db.prepare(`
-        INSERT INTO user_state (user_id, active_agent, last_activity) 
-        VALUES (?, ?, unixepoch())
-        ON CONFLICT(user_id) DO UPDATE SET active_agent = excluded.active_agent, last_activity = unixepoch()
-    `).run(userId, agentName);
-}
-
-export function getActiveAgent(userId: number): string {
-    const db = getDb();
-    const row = db.prepare('SELECT active_agent FROM user_state WHERE user_id = ?').get(userId) as {active_agent: string} | undefined;
-    return row ? row.active_agent : 'ggos';
 }

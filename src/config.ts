@@ -3,67 +3,82 @@ import path from 'path';
 
 dotenv.config();
 
-function getEnv(key: string, required = false, defaultVal = ''): string {
+function env(key: string, fallback = ''): string {
+    return process.env[key] || fallback;
+}
+
+function envRequired(key: string): string {
     const val = process.env[key];
-    if (!val && required && !defaultVal) {
-        console.error(`ERROR: Variable de entorno obligatoria faltante: ${key}`);
+    if (!val) {
+        console.error(`[FATAL] Variable de entorno requerida no encontrada: ${key}`);
         process.exit(1);
     }
-    return val || defaultVal;
+    return val;
 }
 
 export const config = {
     telegram: {
-        botToken: getEnv('TELEGRAM_BOT_TOKEN', true),
-        allowedUserIds: getEnv('TELEGRAM_ALLOWED_USER_IDS').split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n))
+        token: envRequired('TELEGRAM_BOT_TOKEN'),
+        allowedUsers: env('TELEGRAM_ALLOWED_USER_IDS')
+            .split(',')
+            .map(s => parseInt(s.trim()))
+            .filter(n => !isNaN(n))
     },
+
+    // ─── Proveedores LLM ─────────────────────────────────────────────────
     providers: {
-        deepseek: {
-            apiKey: getEnv('DEEPSEEK_API_KEY'),
-            url: getEnv('DEEPSEEK_API_URL', false, 'https://api.deepseek.com/v1'),
-            model: getEnv('DEEPSEEK_MODEL', false, 'deepseek-chat'),
-            timeoutMs: parseInt(getEnv('DEEPSEEK_TIMEOUT_MS', false, '15000'))
+        groq: {
+            name: 'groq',
+            apiKey: env('GROQ_API_KEY'),
+            baseUrl: env('GROQ_URL', 'https://api.groq.com/openai/v1'),
+            model: env('GROQ_MODEL', 'llama-3.3-70b-versatile'),
+            timeout: 20000
         },
         openrouter: {
-            apiKey: getEnv('OPENROUTER_API_KEY'),
-            url: getEnv('OPENROUTER_URL', false, 'https://openrouter.ai/api/v1'),
-            model: getEnv('OPENROUTER_MODEL', false, 'google/gemini-2.5-flash'), // Ejemplo de modelo barato
-            timeoutMs: parseInt(getEnv('OPENROUTER_TIMEOUT_MS', false, '15000'))
+            name: 'openrouter',
+            apiKey: env('OPENROUTER_API_KEY'),
+            baseUrl: env('OPENROUTER_URL', 'https://openrouter.ai/api/v1'),
+            model: env('OPENROUTER_MODEL', 'google/gemini-2.0-flash-lite:free'),
+            timeout: 20000
         },
-        groq: {
-            apiKey: getEnv('GROQ_API_KEY'),
-            url: getEnv('GROQ_URL', false, 'https://api.groq.com/openai/v1'),
-            model: getEnv('GROQ_MODEL', false, 'llama-3.3-70b-versatile'),
-            timeoutMs: parseInt(getEnv('GROQ_TIMEOUT_MS', false, '15000'))
+        deepseek: {
+            name: 'deepseek',
+            apiKey: env('DEEPSEEK_API_KEY'),
+            baseUrl: env('DEEPSEEK_URL', 'https://api.deepseek.com/v1'),
+            model: env('DEEPSEEK_MODEL', 'deepseek-chat'),
+            timeout: 20000
         },
         openai: {
-            apiKey: getEnv('OPENAI_API_KEY'),
-            url: getEnv('OPENAI_URL', false, 'https://api.openai.com/v1'),
-            model: getEnv('OPENAI_MODEL', false, 'gpt-4o-mini'),
-            timeoutMs: parseInt(getEnv('OPENAI_TIMEOUT_MS', false, '15000'))
+            name: 'openai',
+            apiKey: env('OPENAI_API_KEY'),
+            baseUrl: env('OPENAI_URL', 'https://api.openai.com/v1'),
+            model: env('OPENAI_MODEL', 'gpt-4o-mini'),
+            timeout: 20000
         }
     },
-    // Mantengo compatibilidad anterior para index.ts checkEnv
-    deepseek: {
-        apiKey: getEnv('DEEPSEEK_API_KEY')
-    },
+
+    // ─── Ollama (local) ───────────────────────────────────────────────────
     ollama: {
-        url: getEnv('OLLAMA_URL', false, 'http://localhost:11434'),
-        modelKali: getEnv('OLLAMA_MODEL_KALI', false, 'kali-ggos'),
-        baseModel: getEnv('OLLAMA_BASE_MODEL', false, 'dolphin3'),
-        fallbackModel: getEnv('OLLAMA_FALLBACK_MODEL', false, 'llama3.2:3b')
+        url: env('OLLAMA_URL', 'http://localhost:11434'),
+        kaliModel: env('OLLAMA_MODEL_KALI', 'kali-ggos'),
+        kaliBase: env('OLLAMA_BASE_MODEL', 'dolphin3'),
+        fallback: env('OLLAMA_FALLBACK_MODEL', 'llama3.2:3b')
     },
+
+    // ─── Base de datos y rutas ────────────────────────────────────────────
     db: {
-        path: getEnv('DB_PATH', false, './memory.db')
-    },
-    limits: {
-        confirmationTimeoutSeconds: parseInt(getEnv('CONFIRMATION_TIMEOUT_SECONDS', false, '60')),
-        maxFileSizeMb: parseInt(getEnv('MAX_FILE_SIZE_MB', false, '50')),
-        maxAgentIterations: parseInt(getEnv('MAX_AGENT_ITERATIONS', false, '3')),
-        maxHistoryMessages: parseInt(getEnv('MAX_HISTORY_MESSAGES', false, '20'))
+        path: env('DB_PATH', './memory.db')
     },
     dirs: {
-        tmp: path.resolve(getEnv('TMP_DIR', false, './tmp')),
-        modelfiles: path.resolve(getEnv('MODELFILES_DIR', false, './modelfiles'))
+        tmp: path.resolve(env('TMP_DIR', './tmp')),
+        modelfiles: path.resolve(env('MODELFILES_DIR', './modelfiles'))
+    },
+
+    // ─── Límites operacionales ────────────────────────────────────────────
+    limits: {
+        maxIterations: parseInt(env('MAX_AGENT_ITERATIONS', '5')),
+        maxHistory: parseInt(env('MAX_HISTORY_MESSAGES', '10')),
+        maxFileSizeMb: parseInt(env('MAX_FILE_SIZE_MB', '50')),
+        confirmationTimeout: parseInt(env('CONFIRMATION_TIMEOUT_SECONDS', '120'))
     }
 };

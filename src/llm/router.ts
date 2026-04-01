@@ -1,46 +1,56 @@
-import { LLMMessage } from '../types/index.js';
-import { LLMAdapter } from './interface.js';
-import { OpenAiCompatibleAdapter } from './provider.js';
+import { LLMAdapter, LLMMessage } from './interface.js';
+import { OpenAICompatAdapter } from './provider.js';
 import { OllamaAdapter } from './ollama.js';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 
-export class LLMRouter implements LLMAdapter {
-    readonly name = 'router';
-    private providers: LLMAdapter[] = [];
-
-    constructor() {
-        this.addIfAvailable(new OpenAiCompatibleAdapter('groq', config.providers.groq));
-        this.addIfAvailable(new OpenAiCompatibleAdapter('openrouter', config.providers.openrouter));
-        this.addIfAvailable(new OpenAiCompatibleAdapter('deepseek', config.providers.deepseek));
-        this.addIfAvailable(new OpenAiCompatibleAdapter('openai', config.providers.openai));
-        this.addIfAvailable(new OllamaAdapter(config.ollama.fallbackModel));
+/**
+ * Devuelve un adaptador concreto según nombre de proveedor.
+ * El agente puede elegir el suyo o se usa en cascada.
+ */
+export function getProvider(name: string): LLMAdapter {
+    const p = config.providers;
+    switch (name) {
+        case 'groq':       return new OpenAICompatAdapter(p.groq);
+        case 'openrouter': return new OpenAICompatAdapter(p.openrouter);
+        case 'deepseek':   return new OpenAICompatAdapter(p.deepseek);
+        case 'openai':     return new OpenAICompatAdapter(p.openai);
+        case 'ollama':     return new OllamaAdapter(config.ollama.fallback);
+        default:
+            logger.warn(`Proveedor '${name}' desconocido. Usando cascada.`);
+            return getCascadeProvider();
     }
+}
 
-    private addIfAvailable(adapter: LLMAdapter) {
-        if (adapter.isAvailable()) {
-            this.providers.push(adapter);
-        }
-    }
+/**
+ * Cascada de proveedores: toma el primero con API key disponible.
+ * Orden: Groq (más rápido/barato) → OpenRouter → DeepSeek → OpenAI → Ollama
+ */
+export function getCascadeProvider(): LLMAdapter {
+    const candidates: LLMAdapter[] = [
+        new OpenAICompatAdapter(config.providers.groq),
+        new OpenAICompatAdapter(config.providers.openrouter),
+        new OpenAICompatAdapter(config.providers.deepseek),
+        new OpenAICompatAdapter(config.providers.openai),
+        new OllamaAdapter(config.ollama.fallback)
+    ];
 
-    isAvailable(): boolean {
-        return this.providers.length > 0;
-    }
-
-    async chat(messages: LLMMessage[], tools?: any[]): Promise<LLMMessage> {
-        if (this.providers.length === 0) throw new Error('No hay proveedores LLM disponibles.');
-
-        let lastError = '';
-
-        for (const provider of this.providers) {
-            try {
-                return await provider.chat(messages, tools);
-            } catch (err: any) {
-                logger.warn(`[Router] ${provider.name} falló: ${err.message}. Intentando siguiente...`);
-                lastError = err.message;
+    // Devolver wrapper que intente en orden
+    return {
+        providerName: 'cascade',
+        isAvailable: () => true,
+        async chat(messages: LLMMessage[], tools?: any[]): Promise<LLMMessage> {
+            let lastErr = '';
+            for (const provider of candidates) {
+                if (!provider.isAvailable()) continue;
+                try {
+                    return await provider.chat(messages, tools);
+                } catch (e: any) {
+                    lastErr = `[${provider.providerName}] ${e.message}`;
+                    logger.warn(`LLM cascada: ${lastErr}`);
+                }
             }
+            throw new Error(`Todos los LLMs fallaron. Último: ${lastErr}`);
         }
-
-        throw new Error(`Todos los LLMs fallaron. Último error: ${lastError}`);
-    }
+    };
 }

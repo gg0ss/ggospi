@@ -1,62 +1,56 @@
-import { LLMMessage } from '../types/index.js';
-import { LLMAdapter } from './interface.js';
 import fetch from 'node-fetch';
+import { LLMAdapter, LLMMessage } from './interface.js';
 
-export class OpenAiCompatibleAdapter implements LLMAdapter {
-    readonly name: string;
-    private apiKey: string;
-    private url: string;
-    private model: string;
-    private timeoutMs: number;
+interface ProviderConfig {
+    name: string;
+    apiKey: string;
+    baseUrl: string;
+    model: string;
+    timeout: number;
+}
 
-    constructor(name: string, configObj: { apiKey?: string; url: string; model: string; timeoutMs: number }) {
-        this.name = name;
-        this.apiKey = configObj.apiKey || '';
-        this.url = configObj.url;
-        this.model = configObj.model;
-        this.timeoutMs = configObj.timeoutMs;
+export class OpenAICompatAdapter implements LLMAdapter {
+    readonly providerName: string;
+    private cfg: ProviderConfig;
+
+    constructor(cfg: ProviderConfig) {
+        this.providerName = cfg.name;
+        this.cfg = cfg;
     }
 
     isAvailable(): boolean {
-        return !!this.apiKey;
+        return !!this.cfg.apiKey;
     }
 
     async chat(messages: LLMMessage[], tools?: any[]): Promise<LLMMessage> {
-        if (!this.isAvailable()) throw new Error(`${this.name} NO configurado.`);
+        if (!this.isAvailable()) throw new Error(`${this.providerName}: no API key configurada.`);
 
-        const body: any = {
-            model: this.model,
-            messages,
-            temperature: 0.7
-        };
+        const body: any = { model: this.cfg.model, messages, temperature: 0.7 };
+        if (tools?.length) body.tools = tools;
 
-        if (tools && tools.length > 0) {
-            body.tools = tools;
-        }
-
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), this.cfg.timeout);
 
         try {
-            const res = await fetch(`${this.url}/chat/completions`, {
+            const res = await fetch(`${this.cfg.baseUrl}/chat/completions`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.apiKey}`
+                    'Authorization': `Bearer ${this.cfg.apiKey}`
                 },
                 body: JSON.stringify(body),
-                signal: controller.signal as any
+                signal: ctrl.signal as any
             });
 
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(`Error API (${res.status}): ${text}`);
+                const txt = await res.text();
+                throw new Error(`${this.providerName} API error (${res.status}): ${txt.substring(0, 200)}`);
             }
 
             const data = await res.json() as any;
             return data.choices[0].message;
         } finally {
-            clearTimeout(timeout);
+            clearTimeout(timer);
         }
     }
 }

@@ -1,42 +1,30 @@
-import { config } from '../config.js';
-import { LLMMessage } from '../types/index.js';
-import { LLMAdapter } from './interface.js';
 import fetch from 'node-fetch';
+import { LLMAdapter, LLMMessage } from './interface.js';
+import { config } from '../config.js';
 
 export class OllamaAdapter implements LLMAdapter {
-    readonly name: string;
-    private readonly model: string;
-    private available = true;
+    readonly providerName: string;
+    private model: string;
 
-    constructor(modelName: string) {
-        this.model = modelName;
-        this.name = `ollama-${modelName}`;
+    constructor(model: string) {
+        this.model = model;
+        this.providerName = `ollama(${model})`;
     }
 
     isAvailable(): boolean {
-        return this.available;
+        return true; // Siempre intentamos aunque falle al llamar
     }
 
-    async chat(messages: LLMMessage[], tools?: any[]): Promise<LLMMessage> {
-        const body: any = {
-            model: this.model,
-            messages,
-            stream: false
-        };
-
-        if (tools && tools.length > 0) {
-            body.tools = tools;
-        }
-
+    async chat(messages: LLMMessage[], _tools?: any[]): Promise<LLMMessage> {
         const res = await fetch(`${config.ollama.url}/api/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
+            body: JSON.stringify({ model: this.model, messages, stream: false })
         });
 
         if (!res.ok) {
-            const text = await res.text();
-            throw new Error(`Ollama API error (${res.status}): ${text}`);
+            const txt = await res.text();
+            throw new Error(`Ollama error (${res.status}): ${txt.substring(0, 200)}`);
         }
 
         const data = await res.json() as any;

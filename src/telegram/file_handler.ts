@@ -2,7 +2,7 @@ import { Bot, Context } from 'grammy';
 import { config } from '../config.js';
 import fetch from 'node-fetch';
 import { fileAnalyzer } from '../tools/file_analyzer.js';
-import { agentRegistry } from '../agents/registry.js';
+import { registry } from '../agents/registry.js';
 import { logger } from '../utils/logger.js';
 import { getHistory } from '../memory/store.js';
 
@@ -35,7 +35,7 @@ export async function handleFile(ctx: Context, bot: Bot) {
 
     try {
         const file = await bot.api.getFile(fileId);
-        const url = `https://api.telegram.org/file/bot${config.telegram.botToken}/${file.file_path}`;
+        const url = `https://api.telegram.org/file/bot${config.telegram.token}/${file.file_path}`;
         
         const res = await fetch(url);
         if (!res.ok) throw new Error('Error descargando el archivo de Telegram');
@@ -44,14 +44,14 @@ export async function handleFile(ctx: Context, bot: Bot) {
         const buffer = Buffer.from(arrayBuffer);
         const analysis = await fileAnalyzer.analyze(buffer, mimeType, fileName);
 
-        const ggos = agentRegistry.get('ggos');
+        const ggos = registry.get('ggos');
         if (ggos) {
             const response = await ggos.process(
                 ctx.message?.caption || 'He recibido este archivo. Analízalo.', 
                 {
                     userId,
                     telegramCtx: ctx,
-                    history: getHistory(userId, 'ggos', config.limits.maxHistoryMessages),
+                    history: getHistory(userId, 'ggos', config.limits.maxHistory),
                     fileAnalysis: analysis
                 }
             );

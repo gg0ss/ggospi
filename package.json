@@ -1,0 +1,32 @@
+{
+  "name": "ggos-framework",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "check-gpu": "nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader || echo 'GPU no detectada'"
+  },
+  "dependencies": {
+    "grammy": "^1.21.0",
+    "better-sqlite3": "^9.4.0",
+    "dotenv": "^16.4.0",
+    "node-fetch": "^3.3.0",
+    "pdf-parse": "^1.1.1",
+    "mammoth": "^1.7.0",
+    "xlsx": "^0.18.5",
+    "mime-types": "^2.1.35"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "tsx": "^4.7.0",
+    "@types/node": "^20.0.0",
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/pdf-parse": "^1.1.4",
+    "@types/mime-types": "^2.1.4"
+  },
+  "engines": {
+    "node": ">=20.0.0 <21.0.0"
+  }
+}
